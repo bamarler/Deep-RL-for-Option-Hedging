@@ -15,6 +15,7 @@ class OptionEnv():
                        'TSLA', 'JPM', 'JNJ', 'V', 'WMT', 'PG', 'MA', 'DIS']
         self.expiry_days = [7, 14, 30, 45, 60, 90]
 
+
         self.action_space = [0.02 * i for i in range(0, 51)]
         
         #Episode Specific Variables
