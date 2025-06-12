@@ -1,6 +1,8 @@
 import gymnasium as gym
 import gym_trading_env
 import yfinance as yf
+import numpy as np
+from scipy.stats import norm
 from datetime import datetime, timedelta
 import random
 
@@ -14,7 +16,6 @@ class OptionEnv():
         self.tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 
                        'TSLA', 'JPM', 'JNJ', 'V', 'WMT', 'PG', 'MA', 'DIS']
         self.expiry_days = [7, 14, 30, 45, 60, 90]
-
 
         self.action_space = [0.02 * i for i in range(0, 51)]
         
@@ -47,11 +48,9 @@ class OptionEnv():
         self.premium_per_share = self._black_scholes_call(self.current_day)
 
         self.initial_portfolio_value = self.number_of_shares * self.premium_per_share * self.risk
-
-        self.historical_data['feature_stock_price'] = self.historical_data['open']
         
         self.env = gym.make("TradingEnv",
-                name="Test Environment",
+                name=f"{self.ticker} FROM {self.current_day.date()} TO {end_date.date()}",
                 df=self.historical_data[self.historical_data.index >= self.current_day],
                 positions = self.action_space,
                 portfolio_initial_value = self.initial_portfolio_value
@@ -62,6 +61,7 @@ class OptionEnv():
 
     def step(self, action):
         self.time_to_expiry -= 1
+        self.current_day += timedelta(days=1)
         env_obs, reward, done, info = self.env.step(action)
         return self._get_obs(env_obs), reward, done, info
 
@@ -86,23 +86,22 @@ class OptionEnv():
             - delta: Continuous(0, 1)
             - gamma: Continuous(positive)
             - volatility: Continuous(0, 1)
-
         '''
-        sigma = self._calculate_sigma()
-        greeks = self._calculate_greeks(self.strike_price, self.strike_price, self.time_to_expiry, sigma)
-        
-        # TODO: Add normalized portfolio value
+        sigma = self._calculate_volatility()
+        greeks = self._calculate_greeks()
+        stock_price = self.historical_data['open'].loc[self.current_day].values[0]
+
         return {
-            'position': env_obs[0], 
-            'normalized_stock_price': self.historical_data['open'].loc[self.current_day].values[0] / self.strike_price,
+            'position': env_obs[0],
+            'normalized_stock_price': stock_price / self.strike_price,
             'time_to_expiry': self.time_to_expiry, 
-            'normalized_portfolio_value': None,
+            'normalized_portfolio_value': (env_obs[0] * stock_price) / (env_obs[1] * self.initial_portfolio_value),
             'delta': greeks['delta'], 
             'gamma': greeks['gamma'], 
             'volatility': sigma, 
         }
 
-    def _calculate_sigma(self):
+    def _calculate_volatility(self):
         """Calculate annualized historical volatility using EWMA (more emphasis on recent days)"""
         buffer_days = int(self.lookback_days * 1.5)
         start_date = self.current_day - timedelta(days=buffer_days)
@@ -132,7 +131,7 @@ class OptionEnv():
         tau = self.time_to_expiry / 365.0
         S = self.historical_data['open'].loc[date].values[0]
         K = self.strike_price
-        sigma = self._calculate_sigma()
+        sigma = self._calculate_volatility()
 
         if self.time_to_expiry <= 0:
             return max(0, S - K)
@@ -153,7 +152,7 @@ class OptionEnv():
         tau = self.time_to_expiry / 365.0
         S = self.historical_data['open'].loc[self.current_day].values[0]
         K = self.strike_price
-        sigma = self._calculate_sigma()
+        sigma = self._calculate_volatility()
         
         d1 = self._d1(tau, S, K, sigma)
         
