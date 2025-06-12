@@ -6,6 +6,9 @@ from scipy.stats import norm
 from datetime import datetime, timedelta
 import random
 
+# TODO: Risk-Free-Rate: Varies from year-to-year?
+# TODO: Risk is user-dependent
+# TODO: Moneyness is option-dependent
 class OptionEnv():
     def __init__(self, risk=0.3, moneyness=1.0, risk_free_rate=0.05, lookback_days=252):
         self.risk = risk
