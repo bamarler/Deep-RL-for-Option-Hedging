@@ -3,27 +3,27 @@ import gym_trading_env
 import yfinance as yf
 import numpy as np
 from scipy.stats import norm
-from datetime import datetime, timedelta
+from datetime import date, timedelta
+import os
 import random
+import pandas as pd
 
 # TODO: Risk-Free-Rate: Varies from year-to-year?
 # TODO: Risk is user-dependent
 # TODO: Moneyness is option-dependent
 class OptionEnv():
-    def __init__(self, risk=0.3, moneyness=1.0, risk_free_rate=0.05, lookback_days=252):
+    def __init__(self, tickers: list[str], risk=0.3, moneyness=1.0, risk_free_rate=0.05, lookback_days=252, verbose=True):
         self.risk = risk
         self.moneyness = moneyness
         self.risk_free_rate = risk_free_rate
         self.lookback_days = lookback_days
 
-        self.tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 
-                       'TSLA', 'JPM', 'JNJ', 'V', 'WMT', 'PG', 'MA', 'DIS']
+        self.tickers = tickers
         self.expiry_days = [7, 14, 30, 45, 60, 90]
 
         self.action_space = [0.02 * i for i in range(0, 51)]
         
         #Episode Specific Variables
-        self.historical_data = None
         self.env = None
         self.ticker = None
         self.strike_price = None
@@ -32,19 +32,26 @@ class OptionEnv():
         self.number_of_shares = None
         self.initial_portfolio_value = None
         self.current_day = None
+        self.done = None
+
+        self.verbose = verbose
 
         self.reset()
 
     def reset(self):
         self.ticker = random.choice(self.tickers)
-        end_date = datetime.now() - timedelta(days=random.randint(10, 20 * 365))
-
         self.time_to_expiry = random.choice(self.expiry_days)
+        end_date = date(2024, 12, 31) - timedelta(days=random.randint(1, 25 * 365 - self.time_to_expiry))
+
         self.current_day = end_date - timedelta(days=self.time_to_expiry)
+        if self.verbose:
+            print(f"Ticker: {self.ticker} Current day: {self.current_day} End date: {end_date}")
 
-        self.historical_data = self._retrieve_data(self.ticker, self.current_day - timedelta(days=self.lookback_days * 1.5), end_date)
+        stock_data = self._retrieve_data(self.ticker, self.current_day, end_date)
 
-        self.strike_price = self.historical_data['open'].loc[self.current_day].values[0] * self.moneyness
+        self.current_day = stock_data.index[0].date()
+
+        self.strike_price = stock_data['open'].loc[str(self.current_day)] * self.moneyness
 
         self.number_of_shares = random.randint(1, 10) * 100
 
@@ -52,26 +59,44 @@ class OptionEnv():
 
         self.initial_portfolio_value = self.number_of_shares * self.premium_per_share * self.risk
         
+        # TODO: ADD a reward function
         self.env = gym.make("TradingEnv",
-                name=f"{self.ticker} FROM {self.current_day.date()} TO {end_date.date()}",
-                df=self.historical_data[self.historical_data.index >= self.current_day],
+                name=f"{self.ticker} FROM {self.current_day} TO {end_date}",
+                df=stock_data,
                 positions = self.action_space,
-                portfolio_initial_value = self.initial_portfolio_value
+                portfolio_initial_value = self.initial_portfolio_value,
+                dynamic_feature_functions = [
+                    lambda history: history['position', -1],
+                    lambda history: history['portfolio_valuation', -1],
+                    lambda history: history['date', -1],
+                ],
+                max_episode_duration='max',
+                verbose=self.verbose,
             )
         env_obs, info = self.env.reset()
+        self.done = False
 
         return self._get_obs(env_obs), info
 
     def step(self, action):
-        self.time_to_expiry -= 1
-        self.current_day += timedelta(days=1)
-        env_obs, reward, done, info = self.env.step(action)
-        return self._get_obs(env_obs), reward, done, info
+        if self.done:
+            return self._get_obs(self.env.get_observation()), 0, True, False, {}
 
-    def _retrieve_data(self, ticker : str, start: datetime, end: datetime):
-        df = yf.download(ticker, start=start, end=end)
-        df.columns = [col[0].lower() for col in df.columns]
-        return df
+        env_obs, reward, done, truncated, info = self.env.step(action)
+        self.done = done
+        new_day = pd.to_datetime(env_obs[3]).date()
+        self.time_to_expiry -= (new_day - self.current_day).days
+        self.current_day = new_day
+
+        if done or self.time_to_expiry == 0:
+            self.done = True
+        return self._get_obs(env_obs), reward, self.done, truncated, info
+
+    def _retrieve_data(self, ticker : str, start: date, end: date):
+        if os.path.exists(f'./data/{ticker}.pkl'):
+            return pd.read_pickle(f'./data/{ticker}.pkl')[start:end]
+        else:
+            raise FileNotFoundError(f"Data for {ticker} not found, please download it first.")
 
     def _get_obs(self, env_obs):
         '''
@@ -92,17 +117,19 @@ class OptionEnv():
         '''
         sigma = self._calculate_volatility()
         greeks = self._calculate_greeks()
-        stock_price = self.historical_data['open'].loc[self.current_day].values[0]
 
         return {
-            'position': env_obs[0],
-            'normalized_stock_price': stock_price / self.strike_price,
+            'position': env_obs[1],
+            'normalized_stock_price': env_obs[0] / self.strike_price,
             'time_to_expiry': self.time_to_expiry, 
-            'normalized_portfolio_value': (env_obs[0] * stock_price) / (env_obs[1] * self.initial_portfolio_value),
-            'delta': greeks['delta'], 
-            'gamma': greeks['gamma'], 
-            'volatility': sigma, 
+            'normalized_portfolio_value': env_obs[2] / self.initial_portfolio_value,
+            'delta': greeks['delta'],
+            'gamma': greeks['gamma'],
+            'volatility': sigma,
         }
+    
+    def get_observation(self):
+        return self._get_obs(self.env.get_observation())
 
     def _calculate_volatility(self):
         """Calculate annualized historical volatility using EWMA (more emphasis on recent days)"""
@@ -110,29 +137,28 @@ class OptionEnv():
         start_date = self.current_day - timedelta(days=buffer_days)
         end_date = self.current_day
 
-        stock_data = self.historical_data[start_date:end_date]
+        stock_data = self._retrieve_data(self.ticker, start_date, end_date)
         
         ewma_span = max(self.lookback_days // 4, 10)
 
-        prices = stock_data['close'].values
+        prices = stock_data['close']
         log_returns = np.log(prices / prices.shift(1)).dropna()
     
         # Calculate EWMA of squared returns
         squared_returns = log_returns ** 2
         ewma_variance = squared_returns.ewm(span=ewma_span, adjust=False).mean()
-        
         # Take square root to get volatility (use last value)
-        return np.sqrt(ewma_variance) * np.sqrt(252)
+        return np.sqrt(ewma_variance.iloc[-1]) * np.sqrt(252)
 
-    def _black_scholes_call(self, date: datetime):
+    def _black_scholes_call(self, date: date):
         """
         Calculate Black-Scholes call option price
         
         Parameters:
         - date: Date to calculate premium for
         """
-        tau = self.time_to_expiry / 365.0
-        S = self.historical_data['open'].loc[date].values[0]
+        tau = self.time_to_expiry / 365.0 if self.time_to_expiry > 0 else 1
+        S = self._retrieve_data(self.ticker, date, date + timedelta(days=1))['open'].values[0]
         K = self.strike_price
         sigma = self._calculate_volatility()
 
@@ -152,8 +178,8 @@ class OptionEnv():
         
         Returns dict with delta and gamma
         """
-        tau = self.time_to_expiry / 365.0
-        S = self.historical_data['open'].loc[self.current_day].values[0]
+        tau = self.time_to_expiry / 365.0 if self.time_to_expiry > 0 else 1
+        S = self._retrieve_data(self.ticker, self.current_day, self.current_day + timedelta(days=1))['open'].values[0]
         K = self.strike_price
         sigma = self._calculate_volatility()
         
