@@ -19,12 +19,15 @@ class OptionEnv():
         self.lookback_days = lookback_days
 
         self.tickers = tickers
+        self.data = {
+            ticker: self._retrieve_data(ticker) for ticker in tickers
+        }
+
         self.expiry_days = [7, 14, 30, 45, 60, 90]
 
         self.action_space = [0.02 * i for i in range(0, 51)]
         
         #Episode Specific Variables
-        self.ticker_data = None
         self.env = None
         self.ticker = None
         self.strike_price = None
@@ -48,8 +51,7 @@ class OptionEnv():
         if self.verbose:
             print(f"Ticker: {self.ticker} Current day: {self.current_day} End date: {end_date}")
 
-        self.ticker_data = self._retrieve_data(self.ticker)
-        stock_data = self.ticker_data[self.current_day:end_date]
+        stock_data = self.data[self.ticker][self.current_day:end_date]
 
         self.current_day = stock_data.index[0].date()
 
@@ -153,7 +155,7 @@ class OptionEnv():
         start_date = self.current_day - timedelta(days=buffer_days)
         end_date = self.current_day
 
-        stock_data = self.ticker_data[start_date:end_date]
+        stock_data = self.data[self.ticker][start_date:end_date]
         
         ewma_span = max(self.lookback_days // 4, 10)
 
@@ -174,7 +176,7 @@ class OptionEnv():
         - date: Date to calculate premium for
         """
         tau = self.time_to_expiry / 365.0 if self.time_to_expiry > 0 else 1
-        S = self.ticker_data[date:date + timedelta(days=1)]['open'].values[0]
+        S = self.data[self.ticker][date:date + timedelta(days=1)]['open'].values[0]
         K = self.strike_price
         sigma = self._calculate_volatility()
 
@@ -195,7 +197,7 @@ class OptionEnv():
         Returns dict with delta and gamma
         """
         tau = self.time_to_expiry / 365.0 if self.time_to_expiry > 0 else 1
-        S = self.ticker_data[self.current_day:self.current_day + timedelta(days=1)]['open'].values[0]
+        S = self.data[self.ticker][self.current_day:self.current_day + timedelta(days=1)]['open'].values[0]
         K = self.strike_price
         sigma = self._calculate_volatility()
         
