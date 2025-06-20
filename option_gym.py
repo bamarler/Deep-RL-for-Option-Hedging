@@ -24,6 +24,7 @@ class OptionEnv():
         self.action_space = [0.02 * i for i in range(0, 51)]
         
         #Episode Specific Variables
+        self.ticker_data = None
         self.env = None
         self.ticker = None
         self.strike_price = None
@@ -47,7 +48,8 @@ class OptionEnv():
         if self.verbose:
             print(f"Ticker: {self.ticker} Current day: {self.current_day} End date: {end_date}")
 
-        stock_data = self._retrieve_data(self.ticker, self.current_day, end_date)
+        self.ticker_data = self._retrieve_data(self.ticker)
+        stock_data = self.ticker_data[self.current_day:end_date]
 
         self.current_day = stock_data.index[0].date()
 
@@ -101,13 +103,14 @@ class OptionEnv():
             self.done = True
         return self._get_obs(env_obs), reward, self.done, truncated, info
 
-    def _retrieve_data(self, ticker : str, start: date, end: date):
+    def _retrieve_data(self, ticker: str):
         if os.path.exists(f'./data/{ticker}.pkl'):
-            return pd.read_pickle(f'./data/{ticker}.pkl')[start:end]
+            return pd.read_pickle(f'./data/{ticker}.pkl')
         else:
             raise FileNotFoundError(f"Data for {ticker} not found, please download it first.")
 
     def _preprocess(self, df : pd.DataFrame):
+        df = df.copy()
         df['feature_stock_price'] = df['open']
         return df
 
@@ -150,7 +153,7 @@ class OptionEnv():
         start_date = self.current_day - timedelta(days=buffer_days)
         end_date = self.current_day
 
-        stock_data = self._retrieve_data(self.ticker, start_date, end_date)
+        stock_data = self.ticker_data[start_date:end_date]
         
         ewma_span = max(self.lookback_days // 4, 10)
 
@@ -171,7 +174,7 @@ class OptionEnv():
         - date: Date to calculate premium for
         """
         tau = self.time_to_expiry / 365.0 if self.time_to_expiry > 0 else 1
-        S = self._retrieve_data(self.ticker, date, date + timedelta(days=1))['open'].values[0]
+        S = self.ticker_data[date:date + timedelta(days=1)]['open'].values[0]
         K = self.strike_price
         sigma = self._calculate_volatility()
 
@@ -192,7 +195,7 @@ class OptionEnv():
         Returns dict with delta and gamma
         """
         tau = self.time_to_expiry / 365.0 if self.time_to_expiry > 0 else 1
-        S = self._retrieve_data(self.ticker, self.current_day, self.current_day + timedelta(days=1))['open'].values[0]
+        S = self.ticker_data[self.current_day:self.current_day + timedelta(days=1)]['open'].values[0]
         K = self.strike_price
         sigma = self._calculate_volatility()
         
