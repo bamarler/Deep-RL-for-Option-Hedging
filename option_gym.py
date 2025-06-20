@@ -65,12 +65,11 @@ class OptionEnv():
 
         def reward_function(history):
             if history["data_close", -1] > self.strike_price:
-                premium = 1
+                factor = 1
             else:
-                premium = self.number_of_shares * self.premium_per_share * self.risk
-                premium = premium / (len(str(premium)) - 1)
+                factor = 1 + 10 * (1 - (history["data_close", -1] / self.strike_price))
             
-            return premium *np.log(history["portfolio_valuation", -1] / history["portfolio_valuation", -2])
+            return factor *np.log(history["portfolio_valuation", -1] / history["portfolio_valuation", -2])
         
         self.env = gym.make("TradingEnv",
                 name=f"{self.ticker} FROM {self.current_day} TO {end_date}",
@@ -140,7 +139,7 @@ class OptionEnv():
             'position': env_obs[1],
             'normalized_stock_price': env_obs[0] / self.strike_price,
             'time_to_expiry': self.time_to_expiry, 
-            'normalized_portfolio_value': env_obs[2] / self.initial_portfolio_value,
+            'normalized_portfolio_value': (env_obs[2] - self.initial_portfolio_value) / self.initial_portfolio_value,
             'delta': greeks['delta'],
             'gamma': greeks['gamma'],
             'volatility': sigma,
@@ -229,3 +228,40 @@ class OptionEnv():
         - sigma: Volatility
         """
         return self._d1(tau, S, K, sigma) - sigma*np.sqrt(tau)
+    
+    def compute_optimal_pnls(self):
+        """
+        Compute the maximum and minimum possible PNLs using perfect hindsight.
+        Max: Hold full position (1.0) when price will increase, 0 when it will decrease
+        Min: Hold full position (1.0) when price will decrease, 0 when it will increase
+        """
+        # Get the price series from the data
+        start_date = self.current_day
+        end_date = start_date + timedelta(days=self.time_to_expiry)
+        stock_data = self.data[self.ticker][start_date:end_date]
+        prices = stock_data['close'].values
+        
+        # Calculate price changes
+        price_changes = np.diff(prices)
+        
+        # Optimal positions (with perfect foresight)
+        # For max PNL: hold when price will increase
+        optimal_positions_max = (price_changes > 0).astype(float)
+        # For min PNL: hold when price will decrease (worst case)
+        optimal_positions_min = (price_changes < 0).astype(float)
+        
+        # Calculate PNLs
+        max_hedging_pnl = np.sum(optimal_positions_max * price_changes) * self.number_of_shares
+        min_hedging_pnl = np.sum(optimal_positions_min * price_changes) * self.number_of_shares
+        
+        # Add option payoff
+        final_price = prices[-1]
+        option_payoff = max(self.strike_price - final_price, 0) * self.number_of_shares
+        
+        # Total PNLs (normalized by initial investment)
+        initial_investment = self.premium_per_share * self.number_of_shares * self.risk
+        
+        max_total_pnl = (option_payoff + max_hedging_pnl - initial_investment) / initial_investment
+        min_total_pnl = (option_payoff + min_hedging_pnl - initial_investment) / initial_investment
+        
+        return max_total_pnl, min_total_pnl

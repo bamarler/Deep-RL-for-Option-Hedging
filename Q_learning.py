@@ -48,7 +48,7 @@ def Q_learning(num_episodes=10000, gamma=0.9, epsilon=1, decay_rate=0.999):
 	for i in range(num_episodes):
 		if (i + 1) % 100 == 0:
 			print(f"Episode {i + 1}")
-		obs, _ = env.reset()
+		obs, info = env.reset()
 
 		if Q_table.get(hash(obs)) is None:
 			Q_table[hash(obs)] = np.zeros(len(env.action_space))
@@ -64,7 +64,7 @@ def Q_learning(num_episodes=10000, gamma=0.9, epsilon=1, decay_rate=0.999):
 			else:
 				action = random.randint(0, len(env.action_space) - 1)
 
-			obs, reward, done, truncated, _ = env.step(action)
+			obs, reward, done, truncated, info = env.step(action)
 
 			next_state = hash(obs)
 			if Q_table.get(next_state) is None:
@@ -77,6 +77,7 @@ def Q_learning(num_episodes=10000, gamma=0.9, epsilon=1, decay_rate=0.999):
 
 		epsilon *= decay_rate
 
+		print(info)
 	return Q_table
 
 
