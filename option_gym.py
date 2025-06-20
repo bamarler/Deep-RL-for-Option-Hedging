@@ -58,11 +58,19 @@ class OptionEnv():
         self.premium_per_share = self._black_scholes_call(self.current_day)
 
         self.initial_portfolio_value = self.number_of_shares * self.premium_per_share * self.risk
+
+        def reward_function(history):
+            if history["data_close", -1] > self.strike_price:
+                premium = 1
+            else:
+                premium = self.number_of_shares * self.premium_per_share * self.risk
+                premium = premium / (len(str(premium)) - 1)
+            
+            return premium *np.log(history["portfolio_valuation", -1] / history["portfolio_valuation", -2])
         
-        # TODO: ADD a reward function
         self.env = gym.make("TradingEnv",
                 name=f"{self.ticker} FROM {self.current_day} TO {end_date}",
-                df=stock_data,
+                df=self._preprocess(stock_data),
                 positions = self.action_space,
                 portfolio_initial_value = self.initial_portfolio_value,
                 dynamic_feature_functions = [
@@ -72,6 +80,7 @@ class OptionEnv():
                 ],
                 max_episode_duration='max',
                 verbose=self.verbose,
+                reward_function=reward_function,
             )
         env_obs, info = self.env.reset()
         self.done = False
@@ -97,6 +106,10 @@ class OptionEnv():
             return pd.read_pickle(f'./data/{ticker}.pkl')[start:end]
         else:
             raise FileNotFoundError(f"Data for {ticker} not found, please download it first.")
+
+    def _preprocess(self, df : pd.DataFrame):
+        df['feature_stock_price'] = df['open']
+        return df
 
     def _get_obs(self, env_obs):
         '''

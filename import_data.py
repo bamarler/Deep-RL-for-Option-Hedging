@@ -6,7 +6,6 @@ import os
 def retrieve_data(ticker : str, start: datetime, end: datetime):
     df = yf.download(ticker, start=start, end=end)
     df.columns = [col[0].lower() for col in df.columns]
-    df['feature_stock_price'] = df['open']
     return df
 
 def save_data(df : pd.DataFrame, ticker : str):
