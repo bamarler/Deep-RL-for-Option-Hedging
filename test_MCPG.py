@@ -13,6 +13,7 @@ env = OptionEnv(tickers=['AAPL', 'MSFT', 'IBM', 'JNJ', 'MCD',
 
 agent = MCPGAgent()
 agent.load_policy('MCPGPolicy.pkl')
+# agent.plot_train_statistics('MCPGTrainStatistics.csv')
 
 # Run multiple test episodes
 num_episodes = 1000
@@ -209,7 +210,7 @@ win_rate = (returns > 0).mean()
 summary_data = [
     ['Metric', 'Value'],
     ['Mean Return', f'{returns.mean()*100:.1f}%'],
-    ['Volatility', f'{returns.std()*100:.1f}%'],
+    ['Standard Deviation', f'{returns.std()*100:.1f}%'],
     ['Sharpe Ratio', f'{simple_sharpe:.2f}'],
     ['Sortino Ratio', f'{sortino:.2f}'],
     ['Max Drawdown', f'{max_dd*100:.1f}%'],
