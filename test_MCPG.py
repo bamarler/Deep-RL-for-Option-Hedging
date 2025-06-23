@@ -12,11 +12,11 @@ env = OptionEnv(tickers=['AAPL', 'MSFT', 'IBM', 'JNJ', 'MCD',
                         'INTC', 'BA', 'CAT', 'CVX', 'PEP'], verbose=False)
 
 agent = MCPGAgent()
-agent.load_policy('MCPGPolicy.pkl')
-# agent.plot_train_statistics('MCPGTrainStatistics.csv')
+agent.load_policy('MCPGPolicy_Sharpe_Correct.pkl')
+# agent.plot_train_statistics('MCPGTrainStatistics_Markowitz.csv')
 
 # Run multiple test episodes
-num_episodes = 1000
+num_episodes = 10000
 results = {
     'returns': [],
     'final_pnls': [],
@@ -62,7 +62,7 @@ for episode in range(num_episodes):
     
     # Calculate final metrics
     final_price = trajectory['stock_prices'][-1]
-    option_payoff = max(env.strike_price - final_price, 0) * env.number_of_shares
+    option_payoff = max(final_price - env.strike_price, 0) * env.number_of_shares
     
     # Calculate hedging P&L
     hedging_pnl = 0
@@ -93,6 +93,10 @@ for episode in range(num_episodes):
 returns = np.array(results['returns'])
 optimal_max = np.array(results['optimal_max_returns'])
 optimal_min = np.array(results['optimal_min_returns'])
+
+# CLIPPING
+# clip_threshold = np.percentile(returns, 95)
+# returns = np.clip(returns, a_min=None, a_max=clip_threshold)
 
 # Create visualizations
 fig = plt.figure(figsize=(16, 10))
@@ -149,7 +153,7 @@ plt.axhline(y=0, color='red', linestyle='--', alpha=0.5)
 
 # 4. Rolling Sharpe Ratio (CORRECTED)
 ax4 = plt.subplot(2, 3, 4)
-window = 20
+window = int(num_episodes / 50)
 # Correct Sharpe calculation: mean/std without annualization for episode-based returns
 rolling_returns = pd.Series(returns)
 rolling_mean = rolling_returns.rolling(window).mean()
@@ -174,7 +178,7 @@ ax5 = plt.subplot(2, 3, 5)
 episodes = np.arange(len(returns))
 
 # Add moving averages for clarity
-window = 20
+window = int(num_episodes / 50)
 model_ma = pd.Series(returns * 100).rolling(window).mean()
 max_ma = pd.Series(optimal_max * 100).rolling(window).mean()
 min_ma = pd.Series(optimal_min * 100).rolling(window).mean()
@@ -210,6 +214,7 @@ win_rate = (returns > 0).mean()
 summary_data = [
     ['Metric', 'Value'],
     ['Mean Return', f'{returns.mean()*100:.1f}%'],
+    ['Median Return', f'{np.median(returns)*100:.1f}%'],
     ['Standard Deviation', f'{returns.std()*100:.1f}%'],
     ['Sharpe Ratio', f'{simple_sharpe:.2f}'],
     ['Sortino Ratio', f'{sortino:.2f}'],
