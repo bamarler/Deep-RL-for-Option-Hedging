@@ -187,7 +187,7 @@ class MCPGAgent:
             print(f"Epoch {epoch + 1}: "f"Avg Return = {avg_return:.2%}, Sharpe = {sharpe:.3f}")
         
             if (epoch + 1) % 10 == 0:
-                self.save_policy('MCPGPolicy_Markowitz_Correct.pkl')
+                self.save_policy('MCPG_EntropicRisk_Scratch.pkl')
     
     def save_train_statistics(self, filepath):
         """Save the training statistics to a CSV file"""
@@ -229,7 +229,7 @@ class MCPGAgent:
         final_price = trajectory[-1]['stock_price']
         
         # Option payoff at expiry (for put option) - BUYER receives this
-        option_payoff = max(env.strike_price - final_price, 0)
+        option_payoff = max(final_price - env.strike_price, 0)
         
         # Trading P&L from hedging
         trading_pnl = 0

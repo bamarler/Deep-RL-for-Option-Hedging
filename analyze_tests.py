@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import json
 
-model_name = 'MCPG (Sharpe loss)'
-policy = 'MCPGResults_Sharpe_Correct'
-results = json.load(open(f'{policy}.json'))
+model_name = 'MCPG (Markowtiz Loss)'
+policy = 'MCPGPolicy_Markowitz_Correct'
+results = json.load(open(f'test_results_mcpg/{policy}.json'))
 
 # Convert to arrays
 returns = np.array(results['returns'])
@@ -71,7 +71,7 @@ plt.axhline(y=0, color='red', linestyle='--', alpha=0.5)
 
 # 4. Rolling Sharpe Ratio (CORRECTED)
 ax4 = plt.subplot(2, 3, 4)
-window = int(num_episodes / 50)
+window = 200
 # Correct Sharpe calculation: mean/std without annualization for episode-based returns
 rolling_returns = pd.Series(returns)
 rolling_mean = rolling_returns.rolling(window).mean()
@@ -96,7 +96,7 @@ ax5 = plt.subplot(2, 3, 5)
 episodes = np.arange(len(returns))
 
 # Add moving averages for clarity
-window = int(num_episodes / 50)
+window = 200
 model_ma = pd.Series(returns * 100).rolling(window).mean()
 max_ma = pd.Series(optimal_max * 100).rolling(window).mean()
 min_ma = pd.Series(optimal_min * 100).rolling(window).mean()

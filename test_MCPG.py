@@ -8,7 +8,7 @@ env = OptionEnv(tickers=['AAPL', 'MSFT', 'IBM', 'JNJ', 'MCD',
                         'MMM', 'F', 'T', 'CSCO', 'PFE',
                         'INTC', 'BA', 'CAT', 'CVX', 'PEP'], verbose=False)
 
-policy = 'MCPGPolicy_Sharpe_Correct'
+policy = 'MCPGPolicy_EntropicRisk_Correct'
 agent = MCPGAgent()
 agent.load_policy(f'{policy}.pkl')
 # agent.plot_train_statistics('MCPGTrainStatistics_Markowitz.csv')
@@ -87,4 +87,4 @@ for episode in range(num_episodes):
     if (episode + 1) % 100 == 0:
         print(f"Completed {episode + 1}/{num_episodes} episodes")
 
-json.dump(results, open(f"test_results/{policy}.json", 'w'))
+json.dump(results, open(f"test_results_mcpg/{policy}.json", 'w'))

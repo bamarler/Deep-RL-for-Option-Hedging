@@ -8,11 +8,8 @@ import os
 import random
 import pandas as pd
 
-# TODO: Risk-Free-Rate: Varies from year-to-year?
-# TODO: Risk is user-dependent
-# TODO: Moneyness is option-dependent
 class OptionEnv():
-    def __init__(self, tickers: list[str], risk=0.3, moneyness=1.0, risk_free_rate=0.05, lookback_days=252, verbose=True):
+    def __init__(self, tickers: list[str], risk=0.3, risk_free_rate = 0.05, moneyness=1.0, lookback_days=252, verbose=True):
         self.risk = risk
         self.moneyness = moneyness
         self.risk_free_rate = risk_free_rate
@@ -164,6 +161,7 @@ class OptionEnv():
         # Calculate EWMA of squared returns
         squared_returns = log_returns ** 2
         ewma_variance = squared_returns.ewm(span=ewma_span, adjust=False).mean()
+
         # Take square root to get volatility (use last value)
         return np.sqrt(ewma_variance.iloc[-1]) * np.sqrt(252)
 
@@ -256,7 +254,7 @@ class OptionEnv():
         
         # Add option payoff
         final_price = prices[-1]
-        option_payoff = max(self.strike_price - final_price, 0) * self.number_of_shares
+        option_payoff = max(final_price - self.strike_price, 0) * self.number_of_shares
         
         # Total PNLs (normalized by initial investment)
         initial_investment = self.premium_per_share * self.number_of_shares * self.risk
