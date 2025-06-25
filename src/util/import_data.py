@@ -9,11 +9,11 @@ def retrieve_data(ticker : str, start: datetime, end: datetime):
     return df
 
 def save_data(df : pd.DataFrame, ticker : str):
-    df.to_pickle(f'./data/{ticker}.pkl')
+    df.to_pickle(f'./stock_data/{ticker}.pkl')
 
 def load_data(ticker : str):
-    if os.path.exists(f'./data/{ticker}.pkl'):
-        return pd.read_pickle(f'./data/{ticker}.pkl')
+    if os.path.exists(f'./stock_data/{ticker}.pkl'):
+        return pd.read_pickle(f'./stock_data/{ticker}.pkl')
     else:
         return None
 
