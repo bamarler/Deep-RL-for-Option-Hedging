@@ -4,6 +4,9 @@ import torch.nn.functional as F
 from torch.optim import Adam, AdamW
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
 class MCPGPositionNetwork(nn.Module):
     def __init__(self, num_actions=51):
@@ -46,11 +49,11 @@ class MCPGPositionNetwork(nn.Module):
         return x
 
 class MCPGAgent:
-    def __init__(self, num_actions=51, risk_aversion=1.0):
+    def __init__(self, num_actions=51, risk_aversion=1.0, learning_rate=0.003):
         self.network = MCPGPositionNetwork(num_actions)
         self.num_actions = num_actions
         self.risk_aversion = risk_aversion  # λ for entropic risk
-        self.optimizer = AdamW(self.network.parameters(), lr=0.003, weight_decay=0.0001, eps=1e-7)
+        self.optimizer = AdamW(self.network.parameters(), lr=learning_rate, weight_decay=0.0001, eps=1e-7)
 
     def select_action(self, obs, training=True):
         # Get logits from network
@@ -68,7 +71,7 @@ class MCPGAgent:
             action = torch.argmax(logits)
             return action.item(), None
     
-    def train(self, env, num_episodes=10000, batch_size=256):
+    def train(self, env, policy_file_path, train_statistics_file_path, num_episodes=10000, batch_size=256):
         """Train the MCPG agent"""
         self.train_statistics = {
             'epoch': [],
@@ -185,9 +188,8 @@ class MCPGAgent:
             #     f"Avg Return = {avg_return:.2%}, Sharpe = {sharpe:.3f}")
 
             print(f"Epoch {epoch + 1}: "f"Avg Return = {avg_return:.2%}, Sharpe = {sharpe:.3f}")
-        
-            if (epoch + 1) % 10 == 0:
-                self.save_policy('MCPG_EntropicRisk_Scratch.pkl')
+            self.save_policy(policy_file_path)
+            self.save_train_statistics(train_statistics_file_path)
     
     def save_train_statistics(self, filepath):
         """Save the training statistics to a CSV file"""

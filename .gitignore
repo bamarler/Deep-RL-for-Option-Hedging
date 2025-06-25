@@ -1,4 +1,4 @@
-data/
+stock_data/
 __pycache__/
 .venv/
 render_logs/

@@ -8,7 +8,9 @@ import numpy as np
 import random
 from collections import deque
 import json
-from option_gym import OptionEnv  
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
 class DDQNNetwork(nn.Module):
     def __init__(self, num_actions=51):
@@ -125,7 +127,7 @@ class DDQNAgent:
                 action = q_values.argmax().item()
             return action, None
     
-    def train_step(self, batch_size=128):
+    def train_step(self, batch_size):
         """Perform one training step"""
         if len(self.replay_buffer) < batch_size:
             return 0.0
@@ -169,9 +171,7 @@ class DDQNAgent:
         
         return loss.item()
     
-    def train(self, env, num_episodes=10000):
-        print(f"Starting DDQN training for {num_episodes} episodes...")
-        
+    def train(self, env, policy_file_path, train_statistics_file_path, batch_size=128, num_episodes=10000, verbose=True):        
         episode_returns = []
         episode_losses = []
         
@@ -209,7 +209,7 @@ class DDQNAgent:
                     
 
                     if len(self.replay_buffer) > 1000:  # Start training after collecting some experience
-                        loss = self.train_step()
+                        loss = self.train_step(batch_size)
                         episode_loss += loss
                         step_count += 1
                     
@@ -229,26 +229,28 @@ class DDQNAgent:
             
             avg_loss = episode_loss / max(step_count, 1)
             episode_losses.append(avg_loss)
+            recent_returns = episode_returns[-500:]
+            avg_return = np.mean(recent_returns)
+            std_return = np.std(recent_returns)
+            sharpe = avg_return / (std_return + 1e-8)
+            
+            self.train_statistics['episode'].append(episode + 1)
+            self.train_statistics['avg_return'].append(avg_return)
+            self.train_statistics['sharpe'].append(sharpe)
+            self.train_statistics['epsilon'].append(self.epsilon)
+            self.train_statistics['loss'].append(np.mean(episode_losses[-500:]))
             
             if (episode + 1) % 100 == 0:
-                recent_returns = episode_returns[-500:]
-                avg_return = np.mean(recent_returns)
-                std_return = np.std(recent_returns)
-                sharpe = avg_return / (std_return + 1e-8)
+                self.save_policy(policy_file_path)
+                self.save_train_statistics(train_statistics_file_path)
                 
-                self.train_statistics['episode'].append(episode + 1)
-                self.train_statistics['avg_return'].append(avg_return)
-                self.train_statistics['sharpe'].append(sharpe)
-                self.train_statistics['epsilon'].append(self.epsilon)
-                self.train_statistics['loss'].append(np.mean(episode_losses[-500:]))
-                
-                print(f"Episode {episode + 1}: Avg Return = {avg_return:.2%}, "
-                      f"Sharpe = {sharpe:.3f}, Epsilon = {self.epsilon:.3f}, "
-                      f"Loss = {avg_loss:.4f}")
-                
-                
-            if (episode + 1) % 100 == 0:
-                self.save_policy(f'DDQNPolicy.pkl')
+                if verbose:
+                    print(f"Episode {episode + 1}: Avg Return = {avg_return:.2%}, "
+                          f"Sharpe = {sharpe:.3f}, Epsilon = {self.epsilon:.3f}, "
+                          f"Loss = {avg_loss:.4f}")
+        
+        self.save_policy(policy_file_path)
+        self.save_train_statistics(train_statistics_file_path)
     
     def compute_terminal_pnl(self, trajectory, env):
         
@@ -299,173 +301,3 @@ class DDQNAgent:
     def save_train_statistics(self, filepath):
         df = pd.DataFrame(self.train_statistics)
         df.to_csv(filepath, index=False)
-    
-    def plot_train_statistics(self, filepath):
-        df = pd.read_csv(filepath)
-        
-        # Create subplots
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        
-        # Average Return
-        axes[0, 0].plot(df['episode'], df['avg_return'])
-        axes[0, 0].set_title('Average Return')
-        axes[0, 0].set_xlabel('Episode')
-        axes[0, 0].set_ylabel('Return')
-        
-        # Sharpe Ratio
-        axes[0, 1].plot(df['episode'], df['sharpe'])
-        axes[0, 1].set_title('Sharpe Ratio')
-        axes[0, 1].set_xlabel('Episode')
-        axes[0, 1].set_ylabel('Sharpe')
-        
-        # Epsilon (exploration rate)
-        axes[1, 0].plot(df['episode'], df['epsilon'])
-        axes[1, 0].set_title('Epsilon (Exploration Rate)')
-        axes[1, 0].set_xlabel('Episode')
-        axes[1, 0].set_ylabel('Epsilon')
-        
-        # Training Loss
-        axes[1, 1].plot(df['episode'], df['loss'])
-        axes[1, 1].set_title('Training Loss')
-        axes[1, 1].set_xlabel('Episode')
-        axes[1, 1].set_ylabel('Loss')
-        
-        plt.tight_layout()
-        plt.show()
-
-def evaluate_ddqn_agent(agent, env, num_episodes=1000):
-    print(f"Evaluating DDQN agent for {num_episodes} episodes")
-    
-    results = {
-        'returns': [],
-        'option_payoffs': [],
-        'hedging_pnls': [],
-        'premiums_paid': [],
-        'initial_expiry_days': [],
-        'optimal_max_returns': [],
-        'optimal_min_returns': []
-    }
-    
-    for episode in range(num_episodes):
-        if (episode + 1) % 500 == 0:
-            print(f"Evaluation episode {episode + 1}/{num_episodes}")
-        
-        # Reset environment
-        obs, _ = env.reset()
-        done = False
-        truncated = False
-        
-        # Store initial conditions
-        initial_expiry = env.time_to_expiry
-        initial_investment = env.premium_per_share * env.number_of_shares * env.risk
-        
-        # Store trajectory
-        trajectory = []
-        
-        while not done and not truncated:
-            # Select action (no exploration during evaluation)
-            action, _ = agent.select_action(obs, training=False)
-            
-            # Store trajectory info
-            trajectory.append({
-                'action': action,
-                'position': env.action_space[action],
-                'stock_price': obs['normalized_stock_price'] * env.strike_price,
-                'portfolio_value': obs['normalized_portfolio_value']
-            })
-            
-            # Take action with error handling
-            try:
-                obs, reward, done, truncated, _ = env.step(action)
-            except IndexError:
-                # Handle case where we've reached end of data
-                done = True
-                truncated = True
-                break
-        
-        final_price = trajectory[-1]['stock_price']
-        option_payoff = max(env.strike_price - final_price, 0) * env.number_of_shares
-        
-        trading_pnl = 0
-        for t in range(len(trajectory) - 1):
-            position = trajectory[t]['position']
-            price_change = trajectory[t+1]['stock_price'] - trajectory[t]['stock_price']
-            trading_pnl += position * price_change * env.number_of_shares
-        
-        final_value = option_payoff + trading_pnl
-        normalized_return = (final_value - initial_investment) / initial_investment
-        
-        # Compute optimal returns for comparison
-        max_optimal, min_optimal = env.compute_optimal_pnls()
-        
-        # Store results
-        results['returns'].append(normalized_return)
-        results['option_payoffs'].append(option_payoff)
-        results['hedging_pnls'].append(trading_pnl)
-        results['premiums_paid'].append(initial_investment)
-        results['initial_expiry_days'].append(initial_expiry)
-        results['optimal_max_returns'].append(max_optimal)
-        results['optimal_min_returns'].append(min_optimal)
-    
-    return results
-
-if __name__ == "__main__":
-    import yfinance as yf
-    from datetime import datetime
-    import pandas as pd
-    import os
-    
-    def retrieve_data(ticker : str, start: datetime, end: datetime):
-        df = yf.download(ticker, start=start, end=end)
-        df.columns = [col[0].lower() for col in df.columns]
-        return df
-    
-    def save_data(df : pd.DataFrame, ticker : str):
-        df.to_pickle(f'./data/{ticker}.pkl')
-    
-    def load_data(ticker : str):
-        if os.path.exists(f'./data/{ticker}.pkl'):
-            return pd.read_pickle(f'./data/{ticker}.pkl')
-        else:
-            return None
-    
-    tickers = ['AAPL', 'MSFT', 'IBM', 'JNJ', 'MCD', 
-               'KO', 'PG', 'WMT', 'XOM', 'GE', 
-               'MMM', 'F', 'T', 'CSCO', 'PFE',
-               'INTC', 'BA', 'CAT', 'CVX', 'PEP']
-    
-    if not os.path.exists('./data'):
-        os.makedirs('./data')
-    
-    for ticker in tickers:
-        if not os.path.exists(f'./data/{ticker}.pkl'):
-            print(f"Downloading data for {ticker}...")
-            df = retrieve_data(ticker, datetime(1998, 1, 1), datetime(2024, 12, 31))
-            save_data(df, ticker)
-    
-    env = OptionEnv(tickers, verbose=False)
-    
-    # Initialize DDQN agent
-    agent = DDQNAgent(
-        num_actions=51,
-        learning_rate=0.001,
-        gamma=0.99,
-        epsilon_start=1.0,
-        epsilon_end=0.01,
-        epsilon_decay=0.999,
-        target_update_freq=250
-    )
-    
-    agent.train(env, num_episodes=5000)
-    
-    agent.save_train_statistics('DDQNResults_training.csv')
-    
-    results = evaluate_ddqn_agent(agent, env, num_episodes=1000)
-    
-    # Save evaluation results
-    with open('DDQNResults_evaluation.json', 'w') as f:
-        json.dump(results, f)
-    
-    print("Training and evaluation completed!")
-    print(f"Average return: {np.mean(results['returns'])*100:.2f}%")
-    print(f"Sharpe ratio: {np.mean(results['returns'])/np.std(results['returns']):.3f}")

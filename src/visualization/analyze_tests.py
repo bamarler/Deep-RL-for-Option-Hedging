@@ -3,9 +3,16 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import json
 
-model_name = 'MCPG (Markowtiz Loss)'
-policy = 'MCPGPolicy_Markowitz_Correct'
-results = json.load(open(f'test_results_mcpg/{policy}.json'))
+# Choose Name for Title
+model_name = 'DDQN'
+
+
+# Choose Model: MCPG or DDQN
+model_type = 'DDQN'
+
+# Choose Policy
+policy = 'DDQNPolicy'
+results = json.load(open(f'results/data/testing/{model_type}/{policy}.json'))
 
 # Convert to arrays
 returns = np.array(results['returns'])

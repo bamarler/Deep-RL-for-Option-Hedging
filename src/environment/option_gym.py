@@ -54,7 +54,8 @@ class OptionEnv():
 
         self.strike_price = stock_data['open'].loc[str(self.current_day)] * self.moneyness
 
-        self.number_of_shares = random.randint(1, 10) * 100
+        # self.number_of_shares = random.randint(1, 10) * 100
+        self.number_of_shares = 500
 
         self.premium_per_share = self._black_scholes_call(self.current_day)
 
@@ -102,8 +103,8 @@ class OptionEnv():
         return self._get_obs(env_obs), reward, self.done, truncated, info
 
     def _retrieve_data(self, ticker: str):
-        if os.path.exists(f'./data/{ticker}.pkl'):
-            return pd.read_pickle(f'./data/{ticker}.pkl')
+        if os.path.exists(f'./stock_data/{ticker}.pkl'):
+            return pd.read_pickle(f'./stock_data/{ticker}.pkl')
         else:
             raise FileNotFoundError(f"Data for {ticker} not found, please download it first.")
 

@@ -1,4 +1,3 @@
-import sys
 import pickle
 import numpy as np
 from Q_learning import hash
