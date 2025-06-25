@@ -1,24 +1,30 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 import pandas as pd
 import matplotlib.pyplot as plt
 
 class MCPGPositionNetwork(nn.Module):
     def __init__(self, num_actions=51):
         super().__init__()
-        
-        # Input features: 7 from obs + 1 previous position = 8 total
+
         input_dim = 7
         
         self.stack = nn.Sequential(
             nn.Linear(input_dim, 128),
-            nn.ReLU(),
-            nn.Dropout(0.25),
+            nn.LayerNorm(128),
+            nn.LeakyReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
+            nn.Dropout(0.2),
             nn.Linear(128, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
             nn.ReLU(),
-            nn.Linear(64, num_actions),
+            nn.Linear(64, num_actions)
         )
         
     def forward(self, obs):
@@ -44,8 +50,8 @@ class MCPGAgent:
         self.network = MCPGPositionNetwork(num_actions)
         self.num_actions = num_actions
         self.risk_aversion = risk_aversion  # λ for entropic risk
-        self.optimizer = Adam(self.network.parameters(), lr=0.001)
-        
+        self.optimizer = AdamW(self.network.parameters(), lr=0.003, weight_decay=0.0001, eps=1e-7)
+
     def select_action(self, obs, training=True):
         # Get logits from network
         logits = self.network(obs)
@@ -66,7 +72,7 @@ class MCPGAgent:
         """Train the MCPG agent"""
         self.train_statistics = {
             'epoch': [],
-            'entropic_risk': [],
+            # 'entropic_risk': [],
             'avg_return': [],
             'sharpe': []
         }
@@ -116,21 +122,36 @@ class MCPGAgent:
                 # Store batch data
                 batch_log_probs.append(torch.stack(episode_log_probs))
                 batch_normalized_returns.append(normalized_return)
-            
+
             # 2. RISK MEASURE: Compute entropic risk measure on normalized returns
             batch_returns_tensor = torch.stack(batch_normalized_returns)
-            
-            # Entropic risk on returns: ρ(R) = (1/λ) * log(E[exp(-λR)])
-            # Note: We minimize risk of negative returns (maximize risk-adjusted returns)
-            entropic_risk = (1/self.risk_aversion) * torch.log(
-                torch.mean(torch.exp(-self.risk_aversion * batch_returns_tensor))
-            )
-            
-            # 3. POLICY GRADIENT: Compute gradients
-            # For each trajectory, gradient is: ∇log π(a|s) * exp(-λ * R) / E[exp(-λ * R)]
-            exp_weighted_returns = torch.exp(-self.risk_aversion * batch_returns_tensor)
-            weights = exp_weighted_returns / exp_weighted_returns.mean()
-            
+
+            ''' FOR ENTROPIC RISK
+                        # Entropic risk on returns: ρ(R) = (1/λ) * log(E[exp(-λR)])
+                        # Note: We minimize risk of negative returns (maximize risk-adjusted returns)
+                        entropic_risk = (1/self.risk_aversion) * torch.log(
+                            torch.mean(torch.exp(-self.risk_aversion * batch_returns_tensor))
+                        )
+
+                        # 3. POLICY GRADIENT: Compute gradients
+                        # For each trajectory, gradient is: ∇log π(a|s) * exp(-λ * R) / E[exp(-λ * R)]
+                        exp_weighted_returns = torch.exp(-self.risk_aversion * batch_returns_tensor)
+                        weights = exp_weighted_returns / exp_weighted_returns.mean()
+            '''
+
+            ''' FOR SHARPE RATIO LOSS FUNCTION
+            mean_return = batch_returns_tensor.mean()
+            std_return = batch_returns_tensor.std() + 1e-8
+            sharpe_ratio = mean_return / std_return
+
+            weights = (batch_returns_tensor - mean_return) / std_return
+            '''
+
+            # Markowitz Loss Function.
+            weights = None
+            with torch.no_grad():
+                weights = batch_returns_tensor - (0.5 * self.risk_aversion * (batch_returns_tensor ** 2))
+
             # Compute policy gradient loss
             policy_loss = 0
             for i in range(batch_size):
@@ -156,15 +177,17 @@ class MCPGAgent:
             sharpe = avg_return / (std_return + 1e-8)
             
             self.train_statistics['epoch'].append(epoch + 1)
-            self.train_statistics['entropic_risk'].append(entropic_risk.item())
+            # self.train_statistics['entropic_risk'].append(entropic_risk.item())
             self.train_statistics['avg_return'].append(avg_return)
             self.train_statistics['sharpe'].append(sharpe)
             
-            print(f"Epoch {epoch + 1}: Entropic Risk = {entropic_risk.item():.4f}, "
-                f"Avg Return = {avg_return:.2%}, Sharpe = {sharpe:.3f}")
+            # print(f"Epoch {epoch + 1}: Entropic Risk = {entropic_risk.item():.4f}, "
+            #     f"Avg Return = {avg_return:.2%}, Sharpe = {sharpe:.3f}")
+
+            print(f"Epoch {epoch + 1}: "f"Avg Return = {avg_return:.2%}, Sharpe = {sharpe:.3f}")
         
             if (epoch + 1) % 10 == 0:
-                self.save_policy('MCPGPolicy.pkl')
+                self.save_policy('MCPG_EntropicRisk_Scratch.pkl')
     
     def save_train_statistics(self, filepath):
         """Save the training statistics to a CSV file"""
@@ -179,10 +202,10 @@ class MCPGAgent:
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         
         # Entropic Risk
-        axes[0, 0].plot(df['epoch'], df['entropic_risk'])
-        axes[0, 0].set_title('Entropic Risk')
-        axes[0, 0].set_xlabel('Epoch')
-        axes[0, 0].set_ylabel('Risk')
+        # axes[0, 0].plot(df['epoch'], df['entropic_risk'])
+        # axes[0, 0].set_title('Entropic Risk')
+        # axes[0, 0].set_xlabel('Epoch')
+        # axes[0, 0].set_ylabel('Risk')
         
         # Average Return
         axes[0, 1].plot(df['epoch'], df['avg_return'])
@@ -206,7 +229,7 @@ class MCPGAgent:
         final_price = trajectory[-1]['stock_price']
         
         # Option payoff at expiry (for put option) - BUYER receives this
-        option_payoff = max(env.strike_price - final_price, 0)
+        option_payoff = max(final_price - env.strike_price, 0)
         
         # Trading P&L from hedging
         trading_pnl = 0
