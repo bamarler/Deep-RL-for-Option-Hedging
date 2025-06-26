@@ -15,7 +15,45 @@ While extensive research exists on option hedging strategies from the seller's p
 - Flexible action space for position sizing (0-100% of portfolio)
 
 ## Results
+![image](https://github.com/user-attachments/assets/4e35eb49-35fc-40d5-81d1-f7ac32ffa703)
 
 
 ## How to Use
 
+- create a virtual environment
+- run the following command in the root directory to install dependencies
+```
+pip install -r requirements.txt
+```
+- optionally, if you have a compatible GPU and want to train with CUDA, follow these instructions: [Successfully using your local NVIDIA GPU with PyTorch or TensorFlow](https://medium.com/@nimritakoul01/successfully-using-your-local-nvidia-gpu-with-pytorch-or-tensorflow-756f3518e88f)
+- Now you are ready to train and test models! The relevant project structure is below:
+```
+├── policies
+├── results
+│   ├── data
+│   │   ├── testing
+│   │   │   ├── DDQN
+│   │   │   └── MCPG
+│   │   └── training
+│   │       ├── DDQN
+│   │       ├── MCPG
+│   │       └── Q-Learning
+│   └── images
+│       ├── testing
+│       │   ├── comparison
+│       │   ├── DDQN
+│       │   └── MCPG
+│       └── training
+│           ├── DDQN
+│           ├── MCPG
+│           └── Q-Learning
+├── src
+│   ├── environment
+│   ├── models
+│   ├── testing
+│   ├── training
+│   ├── util
+│   └── visualization
+├── README.md
+└── report.pdf
+```
