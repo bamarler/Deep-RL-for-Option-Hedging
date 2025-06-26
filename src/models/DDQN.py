@@ -12,6 +12,8 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
+from src.models.agent import Agent
+
 class DDQNNetwork(nn.Module):
     def __init__(self, num_actions=51):
         super().__init__()
@@ -68,10 +70,11 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
-class DDQNAgent:
+class DDQNAgent(Agent):
     def __init__(self, num_actions=51, learning_rate=0.001, gamma=0.99, 
                  epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995,
                  target_update_freq=1000, buffer_size=100000):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.num_actions = num_actions
         self.gamma = gamma
@@ -82,8 +85,8 @@ class DDQNAgent:
         self.update_counter = 0
         
         # Networks
-        self.q_network = DDQNNetwork(num_actions)
-        self.target_network = DDQNNetwork(num_actions)
+        self.q_network = DDQNNetwork(num_actions).to(self.device)
+        self.target_network = DDQNNetwork(num_actions).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         
         # Optimizer
@@ -122,7 +125,7 @@ class DDQNAgent:
         else:
             # Greedy action
             with torch.no_grad():
-                state_tensor = torch.FloatTensor(self.obs_to_tensor(obs)).unsqueeze(0)
+                state_tensor = torch.FloatTensor(self.obs_to_tensor(obs)).unsqueeze(0).to(self.device)
                 q_values = self.q_network(state_tensor)
                 action = q_values.argmax().item()
             return action, None
@@ -136,11 +139,11 @@ class DDQNAgent:
         states, actions, rewards, next_states, dones = self.replay_buffer.sample(batch_size)
         
         # Convert to tensors
-        states = torch.FloatTensor(states)
-        actions = torch.LongTensor(actions)
-        rewards = torch.FloatTensor(rewards)
-        next_states = torch.FloatTensor(next_states)
-        dones = torch.BoolTensor(dones)
+        states = torch.FloatTensor(states).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        next_states = torch.FloatTensor(next_states).to(self.device)
+        dones = torch.BoolTensor(dones).to(self.device)
         
         # Current Q values
         current_q_values = self.q_network(states).gather(1, actions.unsqueeze(1))
@@ -225,7 +228,7 @@ class DDQNAgent:
             
             # Calculate terminal P&L 
             normalized_return = self.compute_terminal_pnl(trajectory, env)
-            episode_returns.append(normalized_return)
+            episode_returns.append(normalized_return.detach().numpy())
             
             avg_loss = episode_loss / max(step_count, 1)
             episode_losses.append(avg_loss)
@@ -252,32 +255,6 @@ class DDQNAgent:
         self.save_policy(policy_file_path)
         self.save_train_statistics(train_statistics_file_path)
     
-    def compute_terminal_pnl(self, trajectory, env):
-        
-        # Final stock price
-        final_price = trajectory[-1]['stock_price']
-        
-        # Option payoff at expiry (for put option) - BUYER receives this
-        option_payoff = max(env.strike_price - final_price, 0)
-        
-        # Trading P&L from hedging
-        trading_pnl = 0
-        for t in range(len(trajectory) - 1):
-            position = trajectory[t]['position']
-            price_change = trajectory[t+1]['stock_price'] - trajectory[t]['stock_price']
-            trading_pnl += position * price_change * env.number_of_shares
-        
-        # Initial investment (premium paid by buyer)
-        initial_investment = env.premium_per_share * env.number_of_shares * env.risk
-        
-        # Final portfolio value = option payoff + trading P&L
-        final_value = option_payoff * env.number_of_shares + trading_pnl
-        
-        # Normalized return: (final - initial) / initial
-        normalized_return = (final_value - initial_investment) / initial_investment
-        
-        return normalized_return
-    
     def save_policy(self, filepath):
         torch.save({
             'q_network_state_dict': self.q_network.state_dict(),
@@ -290,7 +267,7 @@ class DDQNAgent:
     
     def load_policy(self, filepath):
         """Load a trained policy network"""
-        checkpoint = torch.load(filepath)
+        checkpoint = torch.load(filepath, map_location=self.device)
         self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
         self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

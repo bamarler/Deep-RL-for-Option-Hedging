@@ -10,6 +10,30 @@ import pandas as pd
 
 class OptionEnv():
     def __init__(self, tickers: list[str], risk=0.3, risk_free_rate = 0.05, moneyness=1.0, lookback_days=252, verbose=True):
+        """
+        Initialize the environment for option hedging using reinforcement learning.
+        This environment works as follows:
+        - The environment is given a set of tickers to use.
+        - The environment randomly selects a ticker for each episode.
+        - The environment randomly selects an expiry date for each episode.
+        - The environment randomly selects an end date for each episode.
+        - The environment randomly selects a time to expiry for each episode.
+        - The environment selects a strike price based on the moneyness parameter and first day of the episode.
+        - The environment calculates the premium per share for each episode using the Black-Scholes model.
+        - The environment randomly selects the number of shares to buy from 100-1000 in increments of 100 for each episode.
+        - The environment calculates the initial portfolio value for each episode using the risk factor.
+        - The environment steps through each day of the episode
+        - The environment calculates the reward for each step
+        - The environment calculates the next state for each step
+        
+        Parameters:
+        - tickers: List of tickers to use
+        - risk: Risk factor for the environment
+        - risk_free_rate: Risk free rate for the environment
+        - moneyness: Moneyness for the environment
+        - lookback_days: Lookback days for the environment
+        - verbose: Whether to print verbose output
+        """
         self.risk = risk
         self.moneyness = moneyness
         self.risk_free_rate = risk_free_rate
@@ -40,6 +64,13 @@ class OptionEnv():
         self.reset()
 
     def reset(self):
+        """
+        Reset the environment
+        
+        Returns:
+        - obs: Observation from the environment
+        - info: Additional information
+        """
         self.ticker = random.choice(self.tickers)
         self.time_to_expiry = random.choice(self.expiry_days)
         end_date = date(2024, 12, 31) - timedelta(days=random.randint(1, 25 * 365 - self.time_to_expiry))
@@ -54,8 +85,7 @@ class OptionEnv():
 
         self.strike_price = stock_data['open'].loc[str(self.current_day)] * self.moneyness
 
-        # self.number_of_shares = random.randint(1, 10) * 100
-        self.number_of_shares = 500
+        self.number_of_shares = 1000
 
         self.premium_per_share = self._black_scholes_call(self.current_day)
 
@@ -89,6 +119,19 @@ class OptionEnv():
         return self._get_obs(env_obs), info
 
     def step(self, action):
+        """
+        Step the environment
+        
+        Parameters:
+        - action: Action to take
+        
+        Returns:
+        - obs: Observation from the environment
+        - reward: Reward from the environment
+        - done: Whether the episode is done
+        - truncated: Whether the episode was truncated
+        - info: Additional information
+        """
         if self.done:
             return self._get_obs(self.env.get_observation()), 0, True, False, {}
 
@@ -103,12 +146,30 @@ class OptionEnv():
         return self._get_obs(env_obs), reward, self.done, truncated, info
 
     def _retrieve_data(self, ticker: str):
+        """
+        Retrieve the data for the environment
+        
+        Parameters:
+        - ticker: Ticker symbol of the stock
+        
+        Returns:
+        - df: DataFrame containing the stock data
+        """
         if os.path.exists(f'./stock_data/{ticker}.pkl'):
             return pd.read_pickle(f'./stock_data/{ticker}.pkl')
         else:
             raise FileNotFoundError(f"Data for {ticker} not found, please download it first.")
 
     def _preprocess(self, df : pd.DataFrame):
+        """
+        Preprocess the data for the environment
+        
+        Parameters:
+        - df: DataFrame containing the stock data
+        
+        Returns:
+        - df: DataFrame containing the preprocessed stock data
+        """
         df = df.copy()
         df['feature_stock_price'] = df['open']
         return df
@@ -125,7 +186,7 @@ class OptionEnv():
             - position: Discrete(0, 1, 0.02)
             - normalized_stock_price: Continuous(positive)
             - time_to_expiry: Discrete(0, 90)
-            - normalized_portfolio_value: Continuous(positive)
+            - normalized_portfolio_value: Continuous
             - delta: Continuous(0, 1)
             - gamma: Continuous(positive)
             - volatility: Continuous(0, 1)
@@ -234,30 +295,22 @@ class OptionEnv():
         Max: Hold full position (1.0) when price will increase, 0 when it will decrease
         Min: Hold full position (1.0) when price will decrease, 0 when it will increase
         """
-        # Get the price series from the data
         start_date = self.current_day
         end_date = start_date + timedelta(days=self.time_to_expiry)
         stock_data = self.data[self.ticker][start_date:end_date]
         prices = stock_data['close'].values
         
-        # Calculate price changes
         price_changes = np.diff(prices)
         
-        # Optimal positions (with perfect foresight)
-        # For max PNL: hold when price will increase
         optimal_positions_max = (price_changes > 0).astype(float)
-        # For min PNL: hold when price will decrease (worst case)
         optimal_positions_min = (price_changes < 0).astype(float)
         
-        # Calculate PNLs
         max_hedging_pnl = np.sum(optimal_positions_max * price_changes) * self.number_of_shares
         min_hedging_pnl = np.sum(optimal_positions_min * price_changes) * self.number_of_shares
         
-        # Add option payoff
         final_price = prices[-1]
         option_payoff = max(final_price - self.strike_price, 0) * self.number_of_shares
         
-        # Total PNLs (normalized by initial investment)
         initial_investment = self.premium_per_share * self.number_of_shares * self.risk
         
         max_total_pnl = (option_payoff + max_hedging_pnl - initial_investment) / initial_investment

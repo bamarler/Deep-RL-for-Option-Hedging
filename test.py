@@ -1,3 +1,3 @@
-from setuptools import find_packages
+import torch
 
-print(find_packages())
+print(torch.cuda.is_available())

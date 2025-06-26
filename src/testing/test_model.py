@@ -18,11 +18,20 @@ model_type = 'DDQN'
 # Choose Policy Filename
 policy = 'DDQNPolicy'
 
-# Customize Save File Name
-save_file_name = f'{policy}'
-
 # Number of Episodes
-num_episodes = 1000
+num_episodes = 10000
+
+# Load previous test results
+load_previous_results = True
+
+# Loss Function (if using MCPG)
+loss_function = 'sharpe'
+
+# Customize Save File Name
+if model_type == 'MCPG':
+    save_file_name = f'{policy}_{loss_function}'
+else:
+    save_file_name = f'{policy}_new'
 
 file_path = f'results/data/testing/{model_type}/{save_file_name}.json'
 def save_results(results):
@@ -31,7 +40,7 @@ def save_results(results):
 
 if __name__ == "__main__":
     if model_type == 'MCPG':
-        agent = MCPGAgent()
+        agent = MCPGAgent(loss_function=loss_function)
     elif model_type == 'DDQN':
         agent = DDQNAgent()
     else:
@@ -56,7 +65,11 @@ if __name__ == "__main__":
         'optimal_min_returns': []
     }
 
-    save_results(results)
+    if load_previous_results:
+        with open(file_path, 'r') as f:
+            results = json.load(f)
+    else:
+        save_results(results)
 
     print(f"Testing {model_type} model on {num_episodes} episodes...")
     for episode in range(num_episodes):
