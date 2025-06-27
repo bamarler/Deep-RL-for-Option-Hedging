@@ -4,15 +4,15 @@ import pandas as pd
 import json
 import os
 
-# Configuration
+# Choose Title
 title = 'Cross-Model Option Hedging Comparison'
 
-# Array of models to compare
+# Configure Models to Compare
 model_configs = [
-    {'model_type': 'DDQN', 'policy': 'DDQNPolicy_new', 'label': 'DDQN', 'color': '#8B5CF6'},  # Vivid violet
-    {'model_type': 'MCPG', 'policy': 'MCPGPolicy_sharpe_100k', 'label': 'MCPG-Sharpe', 'color': '#EC4899'},  # Hot pink
-    {'model_type': 'MCPG', 'policy': 'MCPGPolicy_entropic_100k', 'label': 'MCPG-Entropic', 'color': '#10B981'},  # Emerald green
-    {'model_type': 'MCPG', 'policy': 'MCPGPolicy_markowitz_100k', 'label': 'MCPG-Markowitz', 'color': '#F59E0B'},  # Amber orange
+    {'model_type': 'DDQN', 'policy': 'DDQNPolicy_new', 'label': 'DDQN', 'color': '#8B5CF6'},
+    {'model_type': 'MCPG', 'policy': 'MCPGPolicy_sharpe_100k', 'label': 'MCPG-Sharpe', 'color': '#EC4899'},
+    {'model_type': 'MCPG', 'policy': 'MCPGPolicy_entropic_100k', 'label': 'MCPG-Entropic', 'color': '#10B981'},
+    {'model_type': 'MCPG', 'policy': 'MCPGPolicy_markowitz_100k', 'label': 'MCPG-Markowitz', 'color': '#F59E0B'},
 ]
 
 def load_results(config):
@@ -29,7 +29,6 @@ def calculate_metrics(results):
     """Calculate performance metrics for a model."""
     returns = np.array(results['returns'])
     
-    # Basic metrics
     metrics = {
         'mean_return': returns.mean() * 100,
         'median_return': np.median(returns) * 100,
@@ -40,20 +39,16 @@ def calculate_metrics(results):
         'worst_return': returns.min() * 100,
     }
     
-    # Sortino ratio
     downside_std = returns[returns < 0].std() if (returns < 0).any() else 1e-8
     metrics['sortino'] = returns.mean() / downside_std
     
-    # Max drawdown
     cumsum = pd.Series(returns).cumsum()
     cummax = cumsum.cummax()
     metrics['max_drawdown'] = (cumsum - cummax).min() * 100
     
-    # Average win/loss
     metrics['avg_win'] = returns[returns > 0].mean() * 100 if (returns > 0).any() else 0
     metrics['avg_loss'] = returns[returns < 0].mean() * 100 if (returns < 0).any() else 0
     
-    # Capture percent (if optimal data available)
     if 'optimal_max_returns' in results:
         optimal_max = np.array(results['optimal_max_returns'])
         metrics['capture_percent'] = returns.mean() / optimal_max.mean() * 100
@@ -64,7 +59,6 @@ def calculate_metrics(results):
 
 def plot_comparison(model_configs):
     """Create comparison plots for multiple models."""
-    # Load all results
     all_results = []
     for config in model_configs:
         results = load_results(config)
@@ -79,8 +73,7 @@ def plot_comparison(model_configs):
     if not all_results:
         print("No valid results found!")
         return
-    
-    # Create 2x3 figure
+
     fig = plt.figure(figsize=(20, 12))
     
     # 1. Overlayed Returns Distribution (1, 1)
@@ -137,8 +130,6 @@ def plot_comparison(model_configs):
                 color=data['config']['color'],
                 linewidth=0.5)
     
-    # plt.axhline(y=0, color='red', linestyle='--', alpha=0.5)
-    # plt.axhline(y=1, color='green', linestyle='--', alpha=0.5, label='Sharpe = 1')
     plt.xlabel('Episode')
     plt.ylabel('Rolling Sharpe Ratio')
     plt.title(f'Rolling Sharpe Ratio ({window}-episode window)')
@@ -167,12 +158,10 @@ def plot_comparison(model_configs):
     plt.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
     plt.ylim(0, 120)
     
-    # Add value labels on bars
     for bar, val in zip(bars, hedging_pnl_pcts):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + np.sign(val)*1,
                 f'{val:.1f}%', ha='center', va='bottom' if val > 0 else 'top')
     
-    # Add legend
     legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.7, label=label) 
                       for color, label in zip(colors, labels)]
     plt.legend(handles=legend_elements, loc='best')
@@ -187,9 +176,8 @@ def plot_comparison(model_configs):
     plt.ylabel('Standard Deviation (%)')
     plt.title('Returns Standard Deviation Comparison')
     plt.ylim(0, 1300)
-    plt.xticks([])  # Remove x-axis ticks
+    plt.xticks([])
     
-    # Add value labels on bars
     for bar, val in zip(bars, std_devs):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
                 f'{val:.1f}%', ha='center', va='bottom')
@@ -202,7 +190,6 @@ def plot_comparison(model_configs):
     ax6 = plt.subplot(2, 3, 6)
     ax6.axis('off')
     
-    # Prepare table data
     row_labels = [
         'Mean Return (%)',
         'Median Return (%)',
@@ -218,16 +205,13 @@ def plot_comparison(model_configs):
         'Capture Percent (%)'
     ]
     
-    # Create columns for each model
     columns = ['Metric'] + [data['config']['label'] for data in all_results]
     
-    # Build table data
     table_data = []
     for row_label in row_labels:
         row = [row_label]
         for data in all_results:
             metrics = data['metrics']
-            # Map row labels to metric keys
             metric_map = {
                 'Mean Return (%)': 'mean_return',
                 'Median Return (%)': 'median_return',
@@ -257,7 +241,6 @@ def plot_comparison(model_configs):
         
         table_data.append(row)
     
-    # Create table
     table = ax6.table(cellText=table_data,
                      colLabels=columns,
                      cellLoc='center',
@@ -268,7 +251,6 @@ def plot_comparison(model_configs):
     table.set_fontsize(9)
     table.scale(1, 1.5)
     
-    # Style the table
     for i in range(len(columns)):
         table[(0, i)].set_facecolor('#40466e')
         table[(0, i)].set_text_props(weight='bold', color='white')
@@ -282,11 +264,10 @@ def plot_comparison(model_configs):
                 table[(i, j)].set_facecolor('#f0f0f0' if i % 2 == 0 else 'white')
     
     plt.suptitle(title, fontsize=16, y=0.98)
-    # plt.tight_layout()
+    plt.tight_layout()
 
     plt.subplots_adjust(left=0.048, bottom=0.03, right=0.975, top=0.92, wspace=0.2, hspace=0.269)
     
-    # Save figure
     save_dir = 'results/images/testing/comparison'
     os.makedirs(save_dir, exist_ok=True)
     

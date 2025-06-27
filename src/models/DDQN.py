@@ -1,13 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import Adam, AdamW
+from torch.optim import AdamW
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 import random
 from collections import deque
-import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
@@ -16,6 +14,7 @@ from src.models.agent import Agent
 
 class DDQNNetwork(nn.Module):
     def __init__(self, num_actions=51):
+        """Initialize the DDQN network"""
         super().__init__()
         
         input_dim = 7
@@ -37,6 +36,7 @@ class DDQNNetwork(nn.Module):
         
         
     def forward(self, obs):
+        """Forward pass through the network"""
         if isinstance(obs, dict):
             features = torch.tensor([
                 obs['position'],
@@ -57,23 +57,28 @@ class DDQNNetwork(nn.Module):
 
 class ReplayBuffer:
     def __init__(self, capacity=100000):
+        """Initialize the replay buffer"""
         self.buffer = deque(maxlen=capacity)
     
     def push(self, state, action, reward, next_state, done):
+        """Push a transition into the replay buffer"""
         self.buffer.append((state, action, reward, next_state, done))
     
     def sample(self, batch_size):
+        """Sample a batch of transitions from the replay buffer"""
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
         return state, action, reward, next_state, done
     
     def __len__(self):
+        """Return the number of transitions in the replay buffer"""
         return len(self.buffer)
 
 class DDQNAgent(Agent):
     def __init__(self, num_actions=51, learning_rate=0.001, gamma=0.99, 
                  epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995,
                  target_update_freq=1000, buffer_size=100000):
+        """Initialize the DDQN agent"""
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.num_actions = num_actions
@@ -84,18 +89,14 @@ class DDQNAgent(Agent):
         self.target_update_freq = target_update_freq
         self.update_counter = 0
         
-        # Networks
         self.q_network = DDQNNetwork(num_actions).to(self.device)
         self.target_network = DDQNNetwork(num_actions).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         
-        # Optimizer
         self.optimizer = AdamW(self.q_network.parameters(), lr=learning_rate, weight_decay=0.0001)
         
-        # Replay buffer
         self.replay_buffer = ReplayBuffer(buffer_size)
         
-        # Training statistics
         self.train_statistics = {
             'episode': [],
             'avg_return': [],
@@ -105,7 +106,14 @@ class DDQNAgent(Agent):
         }
         
     def obs_to_tensor(self, obs):
-        """Convert observation dict to tensor"""
+        """Convert observation dict to tensor
+        
+        Parameters:
+        - obs: Observation dict
+        
+        Returns:
+        - state_tensor: State tensor
+        """
         return np.array([
             obs['position'],
             obs['normalized_stock_price'],
@@ -117,13 +125,20 @@ class DDQNAgent(Agent):
         ], dtype=np.float32)
     
     def select_action(self, obs, training=True):
-        """Select action using epsilon-greedy policy"""
+        """Select action using epsilon-greedy policy
+        
+        Parameters:
+        - obs: Observation dict
+        - training: Whether to use training policy
+        
+        Returns:
+        - action: Selected action
+        - log_prob: Log probability of selected action (None if not training)
+        """
         if training and random.random() < self.epsilon:
-            # Random action
             action = random.randint(0, self.num_actions - 1)
             return action, None
         else:
-            # Greedy action
             with torch.no_grad():
                 state_tensor = torch.FloatTensor(self.obs_to_tensor(obs)).unsqueeze(0).to(self.device)
                 q_values = self.q_network(state_tensor)
@@ -131,50 +146,61 @@ class DDQNAgent(Agent):
             return action, None
     
     def train_step(self, batch_size):
-        """Perform one training step"""
+        """
+        Perform one training step
+        
+        Parameters:
+        - batch_size: Batch size for training
+        
+        Returns:
+        - loss: Training loss
+        """
         if len(self.replay_buffer) < batch_size:
             return 0.0
         
-        # Sample batch from replay buffer
         states, actions, rewards, next_states, dones = self.replay_buffer.sample(batch_size)
         
-        # Convert to tensors
         states = torch.FloatTensor(states).to(self.device)
         actions = torch.LongTensor(actions).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
         dones = torch.BoolTensor(dones).to(self.device)
         
-        # Current Q values
         current_q_values = self.q_network(states).gather(1, actions.unsqueeze(1))
         
-        # Double DQN: Use main network to select actions, target network to evaluate
         with torch.no_grad():
             next_actions = self.q_network(next_states).argmax(1, keepdim=True)
             next_q_values = self.target_network(next_states).gather(1, next_actions)
             target_q_values = rewards.unsqueeze(1) + (self.gamma * next_q_values * ~dones.unsqueeze(1))
         
-        # Compute loss
         loss = F.mse_loss(current_q_values, target_q_values)
         
-        # Optimize
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0)
         self.optimizer.step()
         
-        # Update target network
         self.update_counter += 1
         if self.update_counter % self.target_update_freq == 0:
             self.target_network.load_state_dict(self.q_network.state_dict())
         
-        # Decay epsilon
         if self.epsilon > self.epsilon_end:
             self.epsilon *= self.epsilon_decay
         
         return loss.item()
     
     def train(self, env, policy_file_path, train_statistics_file_path, batch_size=128, num_episodes=10000, verbose=True):        
+        """
+        Train the agent
+        
+        Parameters:
+        - env: Environment to train on
+        - policy_file_path: Path to save the policy
+        - train_statistics_file_path: Path to save the training statistics
+        - batch_size: Batch size for training
+        - num_episodes: Number of episodes to train for
+        - verbose: Whether to print verbose output
+        """
         episode_returns = []
         episode_losses = []
         
@@ -186,7 +212,6 @@ class DDQNAgent(Agent):
             episode_loss = 0
             step_count = 0
             
-            # Store trajectory for P&L calculation
             trajectory = []
             
             while not done and not truncated:
@@ -194,7 +219,6 @@ class DDQNAgent(Agent):
                 
                 action, _ = self.select_action(obs, training=True)
                 
-                # Store trajectory info
                 trajectory.append({
                     'action': action,
                     'position': env.action_space[action],
@@ -202,16 +226,14 @@ class DDQNAgent(Agent):
                     'portfolio_value': obs['normalized_portfolio_value']
                 })
                 
-                # Take action with error handling
                 try:
                     next_obs, reward, done, truncated, _ = env.step(action)
                     next_state = self.obs_to_tensor(next_obs)
                     
-                    # Store transition in replay buffer
                     self.replay_buffer.push(state, action, reward, next_state, done or truncated)
                     
 
-                    if len(self.replay_buffer) > 1000:  # Start training after collecting some experience
+                    if len(self.replay_buffer) > 1000: 
                         loss = self.train_step(batch_size)
                         episode_loss += loss
                         step_count += 1
@@ -222,11 +244,9 @@ class DDQNAgent(Agent):
                 except IndexError:
                     done = True
                     truncated = True
-                    # Use current state as next state for final transition
                     self.replay_buffer.push(state, action, 0.0, state, True)
                     break
-            
-            # Calculate terminal P&L 
+                    
             normalized_return = self.compute_terminal_pnl(trajectory, env)
             episode_returns.append(normalized_return.detach().numpy())
             
@@ -256,6 +276,7 @@ class DDQNAgent(Agent):
         self.save_train_statistics(train_statistics_file_path)
     
     def save_policy(self, filepath):
+        """Save the policy to a file"""
         torch.save({
             'q_network_state_dict': self.q_network.state_dict(),
             'target_network_state_dict': self.target_network.state_dict(),
@@ -266,7 +287,7 @@ class DDQNAgent(Agent):
         print(f"Policy saved to {filepath}")
     
     def load_policy(self, filepath):
-        """Load a trained policy network"""
+        """Load a policy from a file"""
         checkpoint = torch.load(filepath, map_location=self.device)
         self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
         self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
@@ -276,5 +297,6 @@ class DDQNAgent(Agent):
         print(f"Policy loaded from {filepath}")
     
     def save_train_statistics(self, filepath):
+        """Save the training statistics to a file"""
         df = pd.DataFrame(self.train_statistics)
         df.to_csv(filepath, index=False)

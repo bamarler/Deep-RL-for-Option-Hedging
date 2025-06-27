@@ -220,11 +220,9 @@ class OptionEnv():
         prices = stock_data['close']
         log_returns = np.log(prices / prices.shift(1)).dropna()
     
-        # Calculate EWMA of squared returns
         squared_returns = log_returns ** 2
         ewma_variance = squared_returns.ewm(span=ewma_span, adjust=False).mean()
 
-        # Take square root to get volatility (use last value)
         return np.sqrt(ewma_variance.iloc[-1]) * np.sqrt(252)
 
     def _black_scholes_call(self, date: date):

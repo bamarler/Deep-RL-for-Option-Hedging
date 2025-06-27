@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import Adam, AdamW
+from torch.optim import AdamW
 import pandas as pd
-import matplotlib.pyplot as plt
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
@@ -12,6 +11,13 @@ from src.models.agent import Agent
 
 class MCPGPositionNetwork(nn.Module):
     def __init__(self, num_actions=51, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        """
+        Initialize the MCPG position network
+        
+        Parameters:
+        - num_actions: Number of possible actions
+        - device: Device to run the network on
+        """
         super().__init__()
 
         input_dim = 7
@@ -33,7 +39,15 @@ class MCPGPositionNetwork(nn.Module):
         )
         
     def forward(self, obs):
-        # Extract features from observation dict
+        """
+        Forward pass through the network
+        
+        Parameters:
+        - obs: Observation dict
+        
+        Returns:
+        - x: Raw logits (softmax applied during action selection)
+        """
         features = torch.tensor([
             obs['position'],
             obs['normalized_stock_price'],
@@ -44,10 +58,8 @@ class MCPGPositionNetwork(nn.Module):
             obs['volatility'],
         ], dtype=torch.float32).to(self.device)
         
-        # Forward pass
         x = self.stack(features)
         
-        # Return raw logits (softmax applied during action selection)
         return x
 
 class MCPGAgent(Agent):
@@ -60,23 +72,40 @@ class MCPGAgent(Agent):
         self.optimizer = AdamW(self.network.parameters(), lr=learning_rate, weight_decay=0.0001, eps=1e-7)
 
     def select_action(self, obs, training=True):        
-        # Get logits from network
+        """
+        Select action using epsilon-greedy policy
+        
+        Parameters:
+        - obs: Observation dict
+        - training: Whether to use training policy
+        
+        Returns:
+        - action: Selected action
+        - log_prob: Log probability of selected action (None if not training)
+        """
         logits = self.network(obs)
         
         if training:
-            # Sample from categorical distribution during training
             probs = F.softmax(logits, dim=-1)
             dist = torch.distributions.Categorical(probs)
             action = dist.sample()
             log_prob = dist.log_prob(action)
             return action.item(), log_prob
         else:
-            # Deterministic action during testing
             action = torch.argmax(logits)
             return action.item(), None
     
     def train(self, env, policy_file_path, train_statistics_file_path, num_episodes=10000, batch_size=256):
-        """Train the MCPG agent"""
+        """
+        Train the MCPG agent
+        
+        Parameters:
+        - env: Environment to train on
+        - policy_file_path: Path to save the trained policy
+        - train_statistics_file_path: Path to save the training statistics
+        - num_episodes: Number of episodes to train for
+        - batch_size: Batch size for training
+        """
         print(f"Training MCPG agent for {num_episodes} episodes in batch size {batch_size} with {self.loss_function} loss function...")
         self.train_statistics = {
             'epoch': [],

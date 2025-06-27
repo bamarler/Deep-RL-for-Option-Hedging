@@ -29,24 +29,19 @@ def visualize_training_statistics(train_statistics, name, save_path=None):
         - markowitz: Markowitz values
     save_path (str): Path to save the image (optional)
     """
-    # Create figure with subplots
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     fig.suptitle(f'{name} Training Metrics Over Epochs', fontsize=16)
     
-    # Flatten axes for easier iteration
     axes = axes.flatten()
     
-    # Define metrics to plot (excluding epoch)
     metrics = ['avg_return', 'entropic', 'sharpe', 'markowitz']
     metric_names = ['Average Return', 'Entropic Risk', 'Sharpe Ratio', 'Markowitz Criterion']
     colors = ['blue', 'green', 'red', 'purple']
     
-    # Plot each metric
     for idx, (metric, name, color) in enumerate(zip(metrics, metric_names, colors)):
         ax = axes[idx]
         
         if 'epoch' in train_statistics.columns and metric in train_statistics.columns:
-            # Check if data is not empty
             if not train_statistics[metric].isna().all():
                 ax.plot(train_statistics['epoch'], 
                        train_statistics[metric], 
@@ -57,15 +52,12 @@ def visualize_training_statistics(train_statistics, name, save_path=None):
                        alpha=0.7,
                        label=name)
                 
-                # Add grid
                 ax.grid(True, alpha=0.3)
                 
-                # Set labels
                 ax.set_xlabel('Epoch', fontsize=12)
                 ax.set_ylabel(name, fontsize=12)
                 ax.set_title(f'{name} vs Epoch', fontsize=14)
                 
-                # Add trend line if enough data points
                 valid_data = train_statistics.dropna(subset=['epoch', metric])
                 if len(valid_data) > 3:
                     z = np.polyfit(valid_data['epoch'], valid_data[metric], 1)
@@ -89,23 +81,17 @@ def visualize_training_statistics(train_statistics, name, save_path=None):
                    transform=ax.transAxes)
             ax.set_title(f'{name} vs Epoch', fontsize=14)
     
-    # Adjust layout
     plt.tight_layout()
     
-    # Save the figure
     if save_path:
-        # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
     else:
         plt.savefig('training_metrics.png', dpi=300, bbox_inches='tight')
     
-    # Show the plot
     plt.show()
 
 if __name__ == "__main__":
-    # Read the CSV file
     train_statistics = pd.read_csv(data_file_path)
     
-    # Create individual plots with specified save path
     visualize_training_statistics(train_statistics, name, save_path=image_file_path)

@@ -10,8 +10,6 @@ env = OptionEnv(tickers=['AAPL', 'MSFT', 'IBM', 'JNJ', 'MCD',
            'MMM', 'F', 'T', 'CSCO', 'PFE',
            'INTC', 'BA', 'CAT', 'CVX', 'PEP'], verbose=False)
 
-# TODO: Determine how to hash obs and do Q-learning
-
 def hash(obs : dict):
 	# Discrete
 	position = obs['position']
@@ -82,9 +80,7 @@ def Q_learning(num_episodes=10000, gamma=0.9, epsilon=1, decay_rate=0.999):
 
 
 if __name__ == "__main__":
-	Q_table = Q_learning(num_episodes=1000000, gamma=0.9, epsilon=1, decay_rate=0.99999) # Run Q-learning
-	# Q_table = Q_learning()
+	Q_table = Q_learning(num_episodes=1000000, gamma=0.9, epsilon=1, decay_rate=0.99999)
 
-	# Save the Q-table dict to a file
 	with open('QLearning/Q_table.pickle', 'wb') as handle:
 		pickle.dump(Q_table, handle, protocol=pickle.HIGHEST_PROTOCOL)
